@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: prn232-lms-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "YourStrongPassword123"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1433:1433"
+    networks:
+      - prn232-network
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+    restart: always
+
+  api:
+    image: prn232-lms-api:latest
+    container_name: prn232-lms-api
+    depends_on:
+      - sqlserver
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ASPNETCORE_URLS: "http://+:8080"
+      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=PRN232_LMS;User Id=sa;Password=YourStrongPassword123;TrustServerCertificate=True;"
+    networks:
+      - prn232-network
+    restart: always
+
+networks:
+  prn232-network:
+    driver: bridge
+
+volumes:
+  sqlserver-data:

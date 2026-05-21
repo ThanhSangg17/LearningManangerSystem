@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="D:/SU26_Ki_8/PRN3/PRN232.LearningManagerSystem/PRN232.LearningManagerSystem.API/PRN232.LearningManagerSystem.API.csproj" />
+  <Project Path="PRN232.LearningManagerSystem.Repositories/PRN232.LearningManagerSystem.Repositories.csproj" />
+  <Project Path="PRN232.LearningManagerSystem.Services/PRN232.LearningManagerSystem.Services.csproj" />
+</Solution>
