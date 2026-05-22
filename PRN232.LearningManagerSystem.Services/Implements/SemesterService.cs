@@ -3,9 +3,8 @@ using PRN232.LearningManagerSystem.Repositories.Entities;
 using PRN232.LearningManagerSystem.Repositories.Interfaces;
 using PRN232.LearningManagerSystem.Services.Helpers;
 using PRN232.LearningManagerSystem.Services.Interfaces;
+using PRN232.LearningManagerSystem.Services.Models.BusinessModels;
 using PRN232.LearningManagerSystem.Services.Models.Common;
-using PRN232.LearningManagerSystem.Services.Models.Requests;
-using PRN232.LearningManagerSystem.Services.Models.Responses;
 
 namespace PRN232.LearningManagerSystem.Services.Implements;
 
@@ -18,168 +17,196 @@ public class SemesterService : ISemesterService
         _semesterRepository = semesterRepository;
     }
 
-    public async Task<PagedResponse<object>> GetSemestersAsync(ListQueryParameters query)
+    public async Task<ServicePagedResult<object>> GetSemestersAsync(ServiceListQueryParameters query)
     {
-        var queryable = await _semesterRepository.GetQueryableAsync();
-
-        // Search
-        if (!string.IsNullOrWhiteSpace(query.Search))
-        {
-            var search = query.Search.ToLower();
-            queryable = queryable.Where(s => s.SemesterName.ToLower().Contains(search));
-        }
-
-        // Expand
-        var expandList = (query.Expand ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
-                         .Select(e => e.Trim().ToLower()).ToList();
-        bool expandCourses = expandList.Contains("courses");
-
-        if (expandCourses)
-        {
-            queryable = queryable
-                .Include(s => s.Courses)
-                .ThenInclude(c => c.Subject);
-        }
-
-        // Sort
-        if (!string.IsNullOrWhiteSpace(query.Sort))
-            queryable = ApplySorting(queryable, query.Sort);
-
-        var totalItems = await queryable.CountAsync();
-
-        var items = await queryable
-            .Skip((query.Page - 1) * query.Size)
-            .Take(query.Size)
-            .ToListAsync();
-
-        var responses = items.Select(s => MapToSemesterResponse(s, expandCourses)).ToList();
-
-        var pagination = new PaginationMetadata
-        {
-            Page = query.Page,
-            PageSize = query.Size,
-            TotalItems = totalItems,
-            TotalPages = (int)Math.Ceiling((double)totalItems / query.Size)
-        };
-
-        if (!string.IsNullOrWhiteSpace(query.Fields))
-        {
-            var selected = responses.Select(r => FieldSelector.SelectFields(r, query.Fields)).ToList();
-            return PagedResponse<object>.SuccessResponse((object)selected, pagination);
-        }
-
-        return PagedResponse<object>.SuccessResponse((object)responses, pagination);
-    }
-
-    public async Task<ApiResponse<SemesterResponse>> GetSemesterByIdAsync(int id)
-    {
-        var semester = await _semesterRepository.GetByIdAsync(id);
-        if (semester == null)
-            return ApiResponse<SemesterResponse>.ErrorResponse($"Semester with ID {id} not found.");
-
-        return ApiResponse<SemesterResponse>.SuccessResponse(MapToSemesterResponse(semester, true));
-    }
-
-    public async Task<ApiResponse<SemesterResponse>> CreateSemesterAsync(CreateSemesterRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.SemesterName))
-            return ApiResponse<SemesterResponse>.ErrorResponse("SemesterName is required.");
-
-        if (request.EndDate <= request.StartDate)
-            return ApiResponse<SemesterResponse>.ErrorResponse("EndDate must be greater than StartDate.");
-
-        var semester = new Semester
-        {
-            SemesterName = request.SemesterName,
-            StartDate = request.StartDate,
-            EndDate = request.EndDate
-        };
-
-        await _semesterRepository.AddAsync(semester);
-        await _semesterRepository.SaveChangesAsync();
-
-        var created = await _semesterRepository.GetByIdAsync(semester.SemesterId);
-        return ApiResponse<SemesterResponse>.SuccessResponse(
-            MapToSemesterResponse(created!, true), "Semester created successfully.");
-    }
-
-    public async Task<ApiResponse<SemesterResponse>> UpdateSemesterAsync(int id, UpdateSemesterRequest request)
-    {
-        var semester = await _semesterRepository.GetByIdAsync(id);
-        if (semester == null)
-            return ApiResponse<SemesterResponse>.ErrorResponse($"Semester with ID {id} not found.");
-
-        if (string.IsNullOrWhiteSpace(request.SemesterName))
-            return ApiResponse<SemesterResponse>.ErrorResponse("SemesterName is required.");
-
-        if (request.EndDate <= request.StartDate)
-            return ApiResponse<SemesterResponse>.ErrorResponse("EndDate must be greater than StartDate.");
-
-        semester.SemesterName = request.SemesterName;
-        semester.StartDate = request.StartDate;
-        semester.EndDate = request.EndDate;
-
-        _semesterRepository.Update(semester);
-        await _semesterRepository.SaveChangesAsync();
-
-        var updated = await _semesterRepository.GetByIdAsync(id);
-        return ApiResponse<SemesterResponse>.SuccessResponse(
-            MapToSemesterResponse(updated!, true), "Semester updated successfully.");
-    }
-
-    public async Task<ApiResponse<bool>> DeleteSemesterAsync(int id)
-    {
-        var semester = await _semesterRepository.GetByIdAsync(id);
-        if (semester == null)
-            return ApiResponse<bool>.ErrorResponse($"Semester with ID {id} not found.");
-
         try
         {
-            _semesterRepository.Delete(semester);
-            await _semesterRepository.SaveChangesAsync();
-            return ApiResponse<bool>.SuccessResponse(true, "Semester deleted successfully.");
+            var queryable = await _semesterRepository.GetQueryableAsync();
+
+            // Search
+            if (!string.IsNullOrWhiteSpace(query.Search))
+            {
+                var search = query.Search.ToLower();
+                queryable = queryable.Where(s => s.SemesterName.ToLower().Contains(search));
+            }
+
+            // Expand
+            var expandList = (query.Expand ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
+                             .Select(e => e.Trim().ToLower()).ToList();
+            bool expandCourses = expandList.Contains("courses");
+
+            if (expandCourses)
+            {
+                queryable = queryable
+                    .Include(s => s.Courses)
+                    .ThenInclude(c => c.Subject);
+            }
+
+            // Sort
+            if (!string.IsNullOrWhiteSpace(query.Sort))
+                queryable = ApplySorting(queryable, query.Sort);
+
+            var totalItems = await queryable.CountAsync();
+
+            var items = await queryable
+                .Skip((query.Page - 1) * query.Size)
+                .Take(query.Size)
+                .ToListAsync();
+
+            var businessModels = items
+                .Select(s => MapEntityToBusiness(s, includeCourses: expandCourses))
+                .ToList();
+
+            var pagination = new ServicePaginationMetadata
+            {
+                Page       = query.Page,
+                PageSize   = query.Size,
+                TotalItems = totalItems,
+                TotalPages = (int)Math.Ceiling((double)totalItems / query.Size)
+            };
+
+            if (!string.IsNullOrWhiteSpace(query.Fields))
+            {
+                var selected = businessModels.Select(r => FieldSelector.SelectFields(r, query.Fields)).ToList();
+                return ServicePagedResult<object>.Ok((object)selected, pagination);
+            }
+
+            return ServicePagedResult<object>.Ok((object)businessModels, pagination);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            return ApiResponse<bool>.ErrorResponse(
-                "Cannot delete semester because it has associated courses.");
+            return ServicePagedResult<object>.ServerError("An unexpected error occurred.", ex.Message);
         }
     }
 
-    // ---- Mapping ----
-
-    private static SemesterResponse MapToSemesterResponse(Semester s, bool includeCourses)
+    public async Task<ServiceResult<SemesterBusinessModel>> GetSemesterByIdAsync(int id)
     {
-        return new SemesterResponse
+        try
         {
-            SemesterId = s.SemesterId,
+            var semester = await _semesterRepository.GetByIdAsync(id);
+            if (semester == null)
+                return ServiceResult<SemesterBusinessModel>.NotFound($"Semester with ID {id} not found.");
+
+            return ServiceResult<SemesterBusinessModel>.Ok(MapEntityToBusiness(semester, includeCourses: true));
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult<SemesterBusinessModel>.ServerError("An unexpected error occurred.", ex.Message);
+        }
+    }
+
+    public async Task<ServiceResult<SemesterBusinessModel>> CreateSemesterAsync(SemesterCreateBusinessModel model)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(model.SemesterName))
+                return ServiceResult<SemesterBusinessModel>.BadRequest("SemesterName is required.");
+
+            if (model.EndDate <= model.StartDate)
+                return ServiceResult<SemesterBusinessModel>.BadRequest("EndDate must be greater than StartDate.");
+
+            var semester = new Semester
+            {
+                SemesterName = model.SemesterName,
+                StartDate    = model.StartDate,
+                EndDate      = model.EndDate
+            };
+
+            await _semesterRepository.AddAsync(semester);
+            await _semesterRepository.SaveChangesAsync();
+
+            var created = await _semesterRepository.GetByIdAsync(semester.SemesterId);
+            return ServiceResult<SemesterBusinessModel>.Created(
+                MapEntityToBusiness(created!, includeCourses: true), "Semester created successfully.");
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult<SemesterBusinessModel>.ServerError("An unexpected error occurred.", ex.Message);
+        }
+    }
+
+    public async Task<ServiceResult<SemesterBusinessModel>> UpdateSemesterAsync(int id, SemesterUpdateBusinessModel model)
+    {
+        try
+        {
+            var semester = await _semesterRepository.GetByIdAsync(id);
+            if (semester == null)
+                return ServiceResult<SemesterBusinessModel>.NotFound($"Semester with ID {id} not found.");
+
+            if (string.IsNullOrWhiteSpace(model.SemesterName))
+                return ServiceResult<SemesterBusinessModel>.BadRequest("SemesterName is required.");
+
+            if (model.EndDate <= model.StartDate)
+                return ServiceResult<SemesterBusinessModel>.BadRequest("EndDate must be greater than StartDate.");
+
+            semester.SemesterName = model.SemesterName;
+            semester.StartDate    = model.StartDate;
+            semester.EndDate      = model.EndDate;
+
+            _semesterRepository.Update(semester);
+            await _semesterRepository.SaveChangesAsync();
+
+            var updated = await _semesterRepository.GetByIdAsync(id);
+            return ServiceResult<SemesterBusinessModel>.Ok(
+                MapEntityToBusiness(updated!, includeCourses: true), "Semester updated successfully.");
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult<SemesterBusinessModel>.ServerError("An unexpected error occurred.", ex.Message);
+        }
+    }
+
+    public async Task<ServiceResult<bool>> DeleteSemesterAsync(int id)
+    {
+        try
+        {
+            var semester = await _semesterRepository.GetByIdAsync(id);
+            if (semester == null)
+                return ServiceResult<bool>.NotFound($"Semester with ID {id} not found.");
+
+            _semesterRepository.Delete(semester);
+            await _semesterRepository.SaveChangesAsync();
+            return ServiceResult<bool>.Ok(true, "Semester deleted successfully.");
+        }
+        catch (Exception ex) when (ex.InnerException?.Message.Contains("REFERENCE") == true
+                                || ex.Message.Contains("DELETE"))
+        {
+            return ServiceResult<bool>.BadRequest("Cannot delete semester because it has associated courses.");
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult<bool>.ServerError("An unexpected error occurred.", ex.Message);
+        }
+    }
+
+    // ---- Mapping: Entity → BusinessModel ----
+
+    private static SemesterBusinessModel MapEntityToBusiness(Semester s, bool includeCourses = false)
+    {
+        return new SemesterBusinessModel
+        {
+            SemesterId   = s.SemesterId,
             SemesterName = s.SemesterName,
-            StartDate = s.StartDate,
-            EndDate = s.EndDate,
-            Courses = includeCourses
-                ? s.Courses.Select(MapToCourseSummary).ToList()
+            StartDate    = s.StartDate,
+            EndDate      = s.EndDate,
+            CourseCount  = s.Courses?.Count ?? 0,
+            Courses      = includeCourses
+                ? s.Courses?.Select(c => new CourseBusinessModel
+                {
+                    CourseId    = c.CourseId,
+                    CourseName  = c.CourseName ?? string.Empty,
+                    SemesterId  = c.SemesterId,
+                    SubjectId   = c.SubjectId,
+                    SubjectCode = c.Subject?.SubjectCode ?? string.Empty,
+                    SubjectName = c.Subject?.SubjectName ?? string.Empty,
+                    Credit      = c.Subject?.Credit ?? 0,
+                    DisplayName = $"{c.Subject?.SubjectCode ?? string.Empty} - {c.CourseName}"
+                }).ToList()
                 : null
         };
     }
 
-    private static CourseSummaryResponse MapToCourseSummary(Course c)
-    {
-        return new CourseSummaryResponse
-        {
-            CourseId = c.CourseId,
-            CourseName = c.CourseName,
-            SemesterId = c.SemesterId,
-            SubjectId = c.SubjectId,
-            Semester = null,
-            Subject = c.Subject != null ? new SubjectSummaryResponse
-            {
-                SubjectId = c.Subject.SubjectId,
-                SubjectCode = c.Subject.SubjectCode,
-                SubjectName = c.Subject.SubjectName,
-                Credit = c.Subject.Credit
-            } : null
-        };
-    }
+    // ---- Sorting ----
 
     private static IQueryable<Semester> ApplySorting(IQueryable<Semester> queryable, string sort)
     {
@@ -188,9 +215,9 @@ public class SemesterService : ISemesterService
 
         foreach (var part in parts)
         {
-            var trimmed = part.Trim();
+            var trimmed    = part.Trim();
             var descending = trimmed.StartsWith("-");
-            var field = trimmed.TrimStart('-').ToLower();
+            var field      = trimmed.TrimStart('-').ToLower();
 
             IOrderedQueryable<Semester> next = (ordered == null)
                 ? field switch

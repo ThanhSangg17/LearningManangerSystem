@@ -1,7 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
-namespace PRN232.LearningManagerSystem.Repositories.Models;
+namespace PRN232.LearningManagerSystem.Repositories.Entities;
 
 public partial class Course
 {

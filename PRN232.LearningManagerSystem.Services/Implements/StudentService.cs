@@ -3,9 +3,8 @@ using PRN232.LearningManagerSystem.Repositories.Entities;
 using PRN232.LearningManagerSystem.Repositories.Interfaces;
 using PRN232.LearningManagerSystem.Services.Helpers;
 using PRN232.LearningManagerSystem.Services.Interfaces;
+using PRN232.LearningManagerSystem.Services.Models.BusinessModels;
 using PRN232.LearningManagerSystem.Services.Models.Common;
-using PRN232.LearningManagerSystem.Services.Models.Requests;
-using PRN232.LearningManagerSystem.Services.Models.Responses;
 
 namespace PRN232.LearningManagerSystem.Services.Implements;
 
@@ -18,191 +17,219 @@ public class StudentService : IStudentService
         _studentRepository = studentRepository;
     }
 
-    public async Task<PagedResponse<object>> GetStudentsAsync(ListQueryParameters query)
+    public async Task<ServicePagedResult<object>> GetStudentsAsync(ServiceListQueryParameters query)
     {
-        var queryable = await _studentRepository.GetQueryableAsync();
-
-        // Search
-        if (!string.IsNullOrWhiteSpace(query.Search))
-        {
-            var search = query.Search.ToLower();
-            queryable = queryable.Where(s =>
-                s.FullName.ToLower().Contains(search) ||
-                s.Email.ToLower().Contains(search));
-        }
-
-        // Expand for list
-        var expandList = (query.Expand ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
-                         .Select(e => e.Trim().ToLower()).ToList();
-
-        bool expandEnrollments = expandList.Contains("enrollments") || expandList.Contains("enrollments.course");
-        bool expandEnrollmentCourse = expandList.Contains("enrollments.course");
-
-        if (expandEnrollments)
-        {
-            queryable = queryable
-                .Include(s => s.Enrollments)
-                .ThenInclude(e => e.Course)
-                    .ThenInclude(c => c.Semester);
-            queryable = queryable
-                .Include(s => s.Enrollments)
-                .ThenInclude(e => e.Course)
-                    .ThenInclude(c => c.Subject);
-        }
-
-        // Sort
-        if (!string.IsNullOrWhiteSpace(query.Sort))
-        {
-            queryable = ApplySorting(queryable, query.Sort);
-        }
-
-        // Count total
-        var totalItems = await queryable.CountAsync();
-
-        // Paging
-        var items = await queryable
-            .Skip((query.Page - 1) * query.Size)
-            .Take(query.Size)
-            .ToListAsync();
-
-        var responses = items.Select(s => MapToStudentResponse(s, expandEnrollments)).ToList();
-
-        var pagination = new PaginationMetadata
-        {
-            Page = query.Page,
-            PageSize = query.Size,
-            TotalItems = totalItems,
-            TotalPages = (int)Math.Ceiling((double)totalItems / query.Size)
-        };
-
-        // Field selection
-        if (!string.IsNullOrWhiteSpace(query.Fields))
-        {
-            var selected = responses.Select(r => FieldSelector.SelectFields(r, query.Fields)).ToList();
-            return PagedResponse<object>.SuccessResponse((object)selected, pagination);
-        }
-
-        return PagedResponse<object>.SuccessResponse((object)responses, pagination);
-    }
-
-    public async Task<ApiResponse<StudentResponse>> GetStudentByIdAsync(int id)
-    {
-        var student = await _studentRepository.GetByIdAsync(id);
-        if (student == null)
-            return ApiResponse<StudentResponse>.ErrorResponse($"Student with ID {id} not found.");
-
-        var response = MapToStudentResponse(student, includeEnrollments: true);
-        return ApiResponse<StudentResponse>.SuccessResponse(response);
-    }
-
-    public async Task<ApiResponse<StudentResponse>> CreateStudentAsync(CreateStudentRequest request)
-    {
-        // Validation
-        if (string.IsNullOrWhiteSpace(request.FullName))
-            return ApiResponse<StudentResponse>.ErrorResponse("FullName is required.");
-
-        if (string.IsNullOrWhiteSpace(request.Email))
-            return ApiResponse<StudentResponse>.ErrorResponse("Email is required.");
-
-        if (request.DateOfBirth >= DateTime.Now)
-            return ApiResponse<StudentResponse>.ErrorResponse("DateOfBirth must be in the past.");
-
-        var existing = await _studentRepository.GetByEmailAsync(request.Email);
-        if (existing != null)
-            return ApiResponse<StudentResponse>.ErrorResponse($"Email '{request.Email}' is already in use.");
-
-        var student = new Student
-        {
-            FullName = request.FullName,
-            Email = request.Email,
-            DateOfBirth = request.DateOfBirth
-        };
-
-        await _studentRepository.AddAsync(student);
-        await _studentRepository.SaveChangesAsync();
-
-        var created = await _studentRepository.GetByIdAsync(student.StudentId);
-        return ApiResponse<StudentResponse>.SuccessResponse(
-            MapToStudentResponse(created!, true), "Student created successfully.");
-    }
-
-    public async Task<ApiResponse<StudentResponse>> UpdateStudentAsync(int id, UpdateStudentRequest request)
-    {
-        var student = await _studentRepository.GetByIdAsync(id);
-        if (student == null)
-            return ApiResponse<StudentResponse>.ErrorResponse($"Student with ID {id} not found.");
-
-        if (string.IsNullOrWhiteSpace(request.FullName))
-            return ApiResponse<StudentResponse>.ErrorResponse("FullName is required.");
-
-        if (string.IsNullOrWhiteSpace(request.Email))
-            return ApiResponse<StudentResponse>.ErrorResponse("Email is required.");
-
-        if (request.DateOfBirth >= DateTime.Now)
-            return ApiResponse<StudentResponse>.ErrorResponse("DateOfBirth must be in the past.");
-
-        var existingEmail = await _studentRepository.GetByEmailAsync(request.Email);
-        if (existingEmail != null && existingEmail.StudentId != id)
-            return ApiResponse<StudentResponse>.ErrorResponse($"Email '{request.Email}' is already in use by another student.");
-
-        student.FullName = request.FullName;
-        student.Email = request.Email;
-        student.DateOfBirth = request.DateOfBirth;
-
-        _studentRepository.Update(student);
-        await _studentRepository.SaveChangesAsync();
-
-        var updated = await _studentRepository.GetByIdAsync(id);
-        return ApiResponse<StudentResponse>.SuccessResponse(
-            MapToStudentResponse(updated!, true), "Student updated successfully.");
-    }
-
-    public async Task<ApiResponse<bool>> DeleteStudentAsync(int id)
-    {
-        var student = await _studentRepository.GetByIdAsync(id);
-        if (student == null)
-            return ApiResponse<bool>.ErrorResponse($"Student with ID {id} not found.");
-
         try
         {
-            _studentRepository.Delete(student);
-            await _studentRepository.SaveChangesAsync();
-            return ApiResponse<bool>.SuccessResponse(true, "Student deleted successfully.");
+            var queryable = await _studentRepository.GetQueryableAsync();
+
+            // Search
+            if (!string.IsNullOrWhiteSpace(query.Search))
+            {
+                var search = query.Search.ToLower();
+                queryable = queryable.Where(s =>
+                    s.FullName.ToLower().Contains(search) ||
+                    s.Email.ToLower().Contains(search));
+            }
+
+            // Expand
+            var expandList = (query.Expand ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
+                             .Select(e => e.Trim().ToLower()).ToList();
+
+            bool expandEnrollments      = expandList.Contains("enrollments") || expandList.Contains("enrollments.course");
+            bool expandEnrollmentCourse = expandList.Contains("enrollments.course");
+
+            if (expandEnrollments)
+            {
+                queryable = queryable
+                    .Include(s => s.Enrollments)
+                    .ThenInclude(e => e.Course)
+                        .ThenInclude(c => c.Semester);
+                queryable = queryable
+                    .Include(s => s.Enrollments)
+                    .ThenInclude(e => e.Course)
+                        .ThenInclude(c => c.Subject);
+            }
+
+            // Sort
+            if (!string.IsNullOrWhiteSpace(query.Sort))
+                queryable = ApplySorting(queryable, query.Sort);
+
+            var totalItems = await queryable.CountAsync();
+
+            var items = await queryable
+                .Skip((query.Page - 1) * query.Size)
+                .Take(query.Size)
+                .ToListAsync();
+
+            var businessModels = items
+                .Select(s => MapEntityToBusiness(s, includeEnrollments: expandEnrollments))
+                .ToList();
+
+            var pagination = new ServicePaginationMetadata
+            {
+                Page       = query.Page,
+                PageSize   = query.Size,
+                TotalItems = totalItems,
+                TotalPages = (int)Math.Ceiling((double)totalItems / query.Size)
+            };
+
+            if (!string.IsNullOrWhiteSpace(query.Fields))
+            {
+                var selected = businessModels.Select(r => FieldSelector.SelectFields(r, query.Fields)).ToList();
+                return ServicePagedResult<object>.Ok((object)selected, pagination);
+            }
+
+            return ServicePagedResult<object>.Ok((object)businessModels, pagination);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            return ApiResponse<bool>.ErrorResponse(
-                "Cannot delete student because they have associated enrollments.");
+            return ServicePagedResult<object>.ServerError("An unexpected error occurred.", ex.Message);
         }
     }
 
-    // ---- Mapping ----
-
-    private static StudentResponse MapToStudentResponse(Student s, bool includeEnrollments)
+    public async Task<ServiceResult<StudentBusinessModel>> GetStudentByIdAsync(int id)
     {
-        return new StudentResponse
+        try
         {
-            StudentId = s.StudentId,
-            FullName = s.FullName,
-            Email = s.Email,
-            DateOfBirth = s.DateOfBirth,
-            Enrollments = includeEnrollments
-                ? s.Enrollments.Select(MapToEnrollmentSummary).ToList()
+            var student = await _studentRepository.GetByIdAsync(id);
+            if (student == null)
+                return ServiceResult<StudentBusinessModel>.NotFound($"Student with ID {id} not found.");
+
+            return ServiceResult<StudentBusinessModel>.Ok(MapEntityToBusiness(student, includeEnrollments: true));
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult<StudentBusinessModel>.ServerError("An unexpected error occurred.", ex.Message);
+        }
+    }
+
+    public async Task<ServiceResult<StudentBusinessModel>> CreateStudentAsync(StudentCreateBusinessModel model)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(model.FullName))
+                return ServiceResult<StudentBusinessModel>.BadRequest("FullName is required.");
+
+            if (string.IsNullOrWhiteSpace(model.Email))
+                return ServiceResult<StudentBusinessModel>.BadRequest("Email is required.");
+
+            if (model.DateOfBirth >= DateTime.Now)
+                return ServiceResult<StudentBusinessModel>.BadRequest("DateOfBirth must be in the past.");
+
+            var existing = await _studentRepository.GetByEmailAsync(model.Email);
+            if (existing != null)
+                return ServiceResult<StudentBusinessModel>.BadRequest($"Email '{model.Email}' is already in use.");
+
+            var student = new Student
+            {
+                FullName    = model.FullName,
+                Email       = model.Email,
+                DateOfBirth = model.DateOfBirth
+            };
+
+            await _studentRepository.AddAsync(student);
+            await _studentRepository.SaveChangesAsync();
+
+            var created = await _studentRepository.GetByIdAsync(student.StudentId);
+            return ServiceResult<StudentBusinessModel>.Created(MapEntityToBusiness(created!, includeEnrollments: true), "Student created successfully.");
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult<StudentBusinessModel>.ServerError("An unexpected error occurred.", ex.Message);
+        }
+    }
+
+    public async Task<ServiceResult<StudentBusinessModel>> UpdateStudentAsync(int id, StudentUpdateBusinessModel model)
+    {
+        try
+        {
+            var student = await _studentRepository.GetByIdAsync(id);
+            if (student == null)
+                return ServiceResult<StudentBusinessModel>.NotFound($"Student with ID {id} not found.");
+
+            if (string.IsNullOrWhiteSpace(model.FullName))
+                return ServiceResult<StudentBusinessModel>.BadRequest("FullName is required.");
+
+            if (string.IsNullOrWhiteSpace(model.Email))
+                return ServiceResult<StudentBusinessModel>.BadRequest("Email is required.");
+
+            if (model.DateOfBirth >= DateTime.Now)
+                return ServiceResult<StudentBusinessModel>.BadRequest("DateOfBirth must be in the past.");
+
+            var existingEmail = await _studentRepository.GetByEmailAsync(model.Email);
+            if (existingEmail != null && existingEmail.StudentId != id)
+                return ServiceResult<StudentBusinessModel>.BadRequest($"Email '{model.Email}' is already in use by another student.");
+
+            student.FullName    = model.FullName;
+            student.Email       = model.Email;
+            student.DateOfBirth = model.DateOfBirth;
+
+            _studentRepository.Update(student);
+            await _studentRepository.SaveChangesAsync();
+
+            var updated = await _studentRepository.GetByIdAsync(id);
+            return ServiceResult<StudentBusinessModel>.Ok(MapEntityToBusiness(updated!, includeEnrollments: true), "Student updated successfully.");
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult<StudentBusinessModel>.ServerError("An unexpected error occurred.", ex.Message);
+        }
+    }
+
+    public async Task<ServiceResult<bool>> DeleteStudentAsync(int id)
+    {
+        try
+        {
+            var student = await _studentRepository.GetByIdAsync(id);
+            if (student == null)
+                return ServiceResult<bool>.NotFound($"Student with ID {id} not found.");
+
+            _studentRepository.Delete(student);
+            await _studentRepository.SaveChangesAsync();
+            return ServiceResult<bool>.Ok(true, "Student deleted successfully.");
+        }
+        catch (Exception ex) when (ex.InnerException?.Message.Contains("REFERENCE") == true
+                                || ex.Message.Contains("DELETE"))
+        {
+            return ServiceResult<bool>.BadRequest("Cannot delete student because they have associated enrollments.");
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult<bool>.ServerError("An unexpected error occurred.", ex.Message);
+        }
+    }
+
+    // ---- Mapping: Entity → BusinessModel ----
+
+    private static StudentBusinessModel MapEntityToBusiness(Student s, bool includeEnrollments = false)
+    {
+        return new StudentBusinessModel
+        {
+            StudentId       = s.StudentId,
+            FullName        = s.FullName,
+            Email           = s.Email,
+            DateOfBirth     = s.DateOfBirth,
+            EnrollmentCount = s.Enrollments?.Count ?? 0,
+            Enrollments     = includeEnrollments
+                ? s.Enrollments?.Select(e => new EnrollmentBusinessModel
+                {
+                    EnrollmentId = e.EnrollmentId,
+                    StudentId    = e.StudentId,
+                    CourseId     = e.CourseId,
+                    EnrollDate   = e.EnrollDate,
+                    Status       = e.Status,
+                    StudentName  = s.FullName,
+                    StudentEmail = s.Email,
+                    CourseName   = e.Course?.CourseName ?? string.Empty,
+                    SubjectCode  = e.Course?.Subject?.SubjectCode   ?? string.Empty,
+                    SemesterName = e.Course?.Semester?.SemesterName ?? string.Empty
+                }).ToList()
                 : null
         };
     }
 
-    private static EnrollmentSummaryResponse MapToEnrollmentSummary(Enrollment e)
-    {
-        return new EnrollmentSummaryResponse
-        {
-            EnrollmentId = e.EnrollmentId,
-            StudentId = e.StudentId,
-            CourseId = e.CourseId,
-            EnrollDate = e.EnrollDate,
-            Status = e.Status
-        };
-    }
+    // ---- Sorting ----
 
     private static IQueryable<Student> ApplySorting(IQueryable<Student> queryable, string sort)
     {
@@ -211,26 +238,26 @@ public class StudentService : IStudentService
 
         foreach (var part in parts)
         {
-            var trimmed = part.Trim();
+            var trimmed    = part.Trim();
             var descending = trimmed.StartsWith("-");
-            var field = trimmed.TrimStart('-').ToLower();
+            var field      = trimmed.TrimStart('-').ToLower();
 
             IOrderedQueryable<Student> next = (ordered == null)
                 ? field switch
                 {
-                    "studentid" => descending ? queryable.OrderByDescending(s => s.StudentId) : queryable.OrderBy(s => s.StudentId),
-                    "fullname"  => descending ? queryable.OrderByDescending(s => s.FullName)  : queryable.OrderBy(s => s.FullName),
-                    "email"     => descending ? queryable.OrderByDescending(s => s.Email)      : queryable.OrderBy(s => s.Email),
-                    "dateofbirth" => descending ? queryable.OrderByDescending(s => s.DateOfBirth) : queryable.OrderBy(s => s.DateOfBirth),
-                    _           => queryable.OrderBy(s => s.StudentId)
+                    "studentid"   => descending ? queryable.OrderByDescending(s => s.StudentId)   : queryable.OrderBy(s => s.StudentId),
+                    "fullname"    => descending ? queryable.OrderByDescending(s => s.FullName)     : queryable.OrderBy(s => s.FullName),
+                    "email"       => descending ? queryable.OrderByDescending(s => s.Email)        : queryable.OrderBy(s => s.Email),
+                    "dateofbirth" => descending ? queryable.OrderByDescending(s => s.DateOfBirth)  : queryable.OrderBy(s => s.DateOfBirth),
+                    _             => queryable.OrderBy(s => s.StudentId)
                 }
                 : field switch
                 {
-                    "studentid" => descending ? ordered.ThenByDescending(s => s.StudentId) : ordered.ThenBy(s => s.StudentId),
-                    "fullname"  => descending ? ordered.ThenByDescending(s => s.FullName)  : ordered.ThenBy(s => s.FullName),
-                    "email"     => descending ? ordered.ThenByDescending(s => s.Email)      : ordered.ThenBy(s => s.Email),
-                    "dateofbirth" => descending ? ordered.ThenByDescending(s => s.DateOfBirth) : ordered.ThenBy(s => s.DateOfBirth),
-                    _           => ordered.ThenBy(s => s.StudentId)
+                    "studentid"   => descending ? ordered.ThenByDescending(s => s.StudentId)   : ordered.ThenBy(s => s.StudentId),
+                    "fullname"    => descending ? ordered.ThenByDescending(s => s.FullName)     : ordered.ThenBy(s => s.FullName),
+                    "email"       => descending ? ordered.ThenByDescending(s => s.Email)        : ordered.ThenBy(s => s.Email),
+                    "dateofbirth" => descending ? ordered.ThenByDescending(s => s.DateOfBirth)  : ordered.ThenBy(s => s.DateOfBirth),
+                    _             => ordered.ThenBy(s => s.StudentId)
                 };
 
             ordered = next;

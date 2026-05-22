@@ -1,14 +1,15 @@
 using Microsoft.AspNetCore.Mvc;
+using PRN232.LearningManagerSystem.API.Models.Common;
+using PRN232.LearningManagerSystem.API.Models.Requests;
+using PRN232.LearningManagerSystem.API.Models.Responses;
 using PRN232.LearningManagerSystem.Services.Interfaces;
+using PRN232.LearningManagerSystem.Services.Models.BusinessModels;
 using PRN232.LearningManagerSystem.Services.Models.Common;
-using PRN232.LearningManagerSystem.Services.Models.Requests;
-using PRN232.LearningManagerSystem.Services.Models.Responses;
 
 namespace PRN232.LearningManagerSystem.API.Controllers;
 
-[ApiController]
 [Route("api/enrollments")]
-public class EnrollmentsController : ControllerBase
+public class EnrollmentsController : BaseApiController
 {
     private readonly IEnrollmentService _enrollmentService;
 
@@ -21,36 +22,66 @@ public class EnrollmentsController : ControllerBase
     [HttpGet]
     [ProducesResponseType(typeof(PagedResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(PagedResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(PagedResponse<object>), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetEnrollments([FromQuery] ListQueryParameters query)
     {
-        var result = await _enrollmentService.GetEnrollmentsAsync(query);
-        if (!result.Success)
-            return BadRequest(result);
-        return Ok(result);
+        var serviceQuery = new ServiceListQueryParameters
+        {
+            Search = query.Search,
+            Sort   = query.Sort,
+            Page   = query.Page,
+            Size   = query.Size,
+            Fields = query.Fields,
+            Expand = query.Expand
+        };
+
+        var result = await _enrollmentService.GetEnrollmentsAsync(serviceQuery);
+        return ToPagedActionResult(result);
     }
 
     /// <summary>Get an enrollment by ID.</summary>
     [HttpGet("{id}")]
     [ProducesResponseType(typeof(ApiResponse<EnrollmentResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetEnrollmentById(int id)
     {
         var result = await _enrollmentService.GetEnrollmentByIdAsync(id);
-        if (!result.Success)
-            return NotFound(result);
-        return Ok(result);
+        return ToActionResult(result, MapEnrollmentBusinessToResponse);
     }
 
     /// <summary>Create a new enrollment.</summary>
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponse<EnrollmentResponse>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> CreateEnrollment([FromBody] CreateEnrollmentRequest request)
     {
-        var result = await _enrollmentService.CreateEnrollmentAsync(request);
+        // Map RequestModel → Business Input Model
+        var businessInput = new EnrollmentCreateBusinessModel
+        {
+            StudentId  = request.StudentId,
+            CourseId   = request.CourseId,
+            EnrollDate = request.EnrollDate,
+            Status     = request.Status
+        };
+
+        var result = await _enrollmentService.CreateEnrollmentAsync(businessInput);
+
         if (!result.Success)
-            return BadRequest(result);
-        return CreatedAtAction(nameof(GetEnrollmentById), new { id = result.Data!.EnrollmentId }, result);
+            return ToActionResult(result, MapEnrollmentBusinessToResponse);
+
+        var response = MapEnrollmentBusinessToResponse(result.Data!);
+
+        var apiResponse = new ApiResponse<EnrollmentResponse>
+        {
+            Success = true,
+            Message = result.Message,
+            Data    = response,
+            Errors  = null
+        };
+
+        return CreatedAtAction(nameof(GetEnrollmentById), new { id = response.EnrollmentId }, apiResponse);
     }
 
     /// <summary>Update an existing enrollment.</summary>
@@ -58,14 +89,19 @@ public class EnrollmentsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<EnrollmentResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> UpdateEnrollment(int id, [FromBody] UpdateEnrollmentRequest request)
     {
-        var result = await _enrollmentService.UpdateEnrollmentAsync(id, request);
-        if (!result.Success && result.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
-            return NotFound(result);
-        if (!result.Success)
-            return BadRequest(result);
-        return Ok(result);
+        var businessInput = new EnrollmentUpdateBusinessModel
+        {
+            StudentId  = request.StudentId,
+            CourseId   = request.CourseId,
+            EnrollDate = request.EnrollDate,
+            Status     = request.Status
+        };
+
+        var result = await _enrollmentService.UpdateEnrollmentAsync(id, businessInput);
+        return ToActionResult(result, MapEnrollmentBusinessToResponse);
     }
 
     /// <summary>Delete an enrollment by ID.</summary>
@@ -73,13 +109,47 @@ public class EnrollmentsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> DeleteEnrollment(int id)
     {
         var result = await _enrollmentService.DeleteEnrollmentAsync(id);
-        if (!result.Success && result.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
-            return NotFound(result);
-        if (!result.Success)
-            return BadRequest(result);
-        return Ok(result);
+        return ToActionResult(result);
+    }
+
+    // ---- Mapping: BusinessModel → ResponseModel ----
+
+    private static EnrollmentResponse MapEnrollmentBusinessToResponse(EnrollmentBusinessModel model)
+    {
+        return new EnrollmentResponse
+        {
+            EnrollmentId = model.EnrollmentId,
+            StudentId    = model.StudentId,
+            CourseId     = model.CourseId,
+            EnrollDate   = model.EnrollDate,
+            Status       = model.Status,
+            Student = !string.IsNullOrEmpty(model.StudentName)
+                ? new StudentSummaryResponse
+                {
+                    StudentId = model.StudentId,
+                    FullName  = model.StudentName,
+                    Email     = model.StudentEmail
+                }
+                : null,
+            Course = !string.IsNullOrEmpty(model.CourseName)
+                ? new CourseSummaryResponse
+                {
+                    CourseId   = model.CourseId,
+                    CourseName = model.CourseName,
+                    SemesterId = 0,  // SemesterId not stored in EnrollmentBusinessModel directly
+                    SubjectId  = 0,  // SubjectId not stored in EnrollmentBusinessModel directly
+                    Semester   = !string.IsNullOrEmpty(model.SemesterName)
+                        ? new SemesterSummaryResponse { SemesterName = model.SemesterName }
+                        : null,
+                    Subject = !string.IsNullOrEmpty(model.SubjectCode)
+                        ? new SubjectSummaryResponse { SubjectCode = model.SubjectCode }
+                        : null
+                }
+                : null
+        };
     }
 }

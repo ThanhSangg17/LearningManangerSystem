@@ -1,0 +1,13 @@
+﻿bin/
+obj/
+.vs/
+*.user
+*.suo
+*.pdb
+*.cache
+*.log
+.idea/
+.vscode/
+
+**/bin/
+**/obj/

@@ -1,14 +1,13 @@
+using PRN232.LearningManagerSystem.Services.Models.BusinessModels;
 using PRN232.LearningManagerSystem.Services.Models.Common;
-using PRN232.LearningManagerSystem.Services.Models.Requests;
-using PRN232.LearningManagerSystem.Services.Models.Responses;
 
 namespace PRN232.LearningManagerSystem.Services.Interfaces;
 
 public interface ICourseService
 {
-    Task<PagedResponse<object>> GetCoursesAsync(ListQueryParameters query);
-    Task<ApiResponse<CourseResponse>> GetCourseByIdAsync(int id);
-    Task<ApiResponse<CourseResponse>> CreateCourseAsync(CreateCourseRequest request);
-    Task<ApiResponse<CourseResponse>> UpdateCourseAsync(int id, UpdateCourseRequest request);
-    Task<ApiResponse<bool>> DeleteCourseAsync(int id);
+    Task<ServicePagedResult<object>> GetCoursesAsync(ServiceListQueryParameters query);
+    Task<ServiceResult<CourseBusinessModel>> GetCourseByIdAsync(int id);
+    Task<ServiceResult<CourseBusinessModel>> CreateCourseAsync(CourseCreateBusinessModel model);
+    Task<ServiceResult<CourseBusinessModel>> UpdateCourseAsync(int id, CourseUpdateBusinessModel model);
+    Task<ServiceResult<bool>> DeleteCourseAsync(int id);
 }

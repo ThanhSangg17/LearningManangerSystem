@@ -3,9 +3,8 @@ using PRN232.LearningManagerSystem.Repositories.Entities;
 using PRN232.LearningManagerSystem.Repositories.Interfaces;
 using PRN232.LearningManagerSystem.Services.Helpers;
 using PRN232.LearningManagerSystem.Services.Interfaces;
+using PRN232.LearningManagerSystem.Services.Models.BusinessModels;
 using PRN232.LearningManagerSystem.Services.Models.Common;
-using PRN232.LearningManagerSystem.Services.Models.Requests;
-using PRN232.LearningManagerSystem.Services.Models.Responses;
 
 namespace PRN232.LearningManagerSystem.Services.Implements;
 
@@ -18,179 +17,211 @@ public class SubjectService : ISubjectService
         _subjectRepository = subjectRepository;
     }
 
-    public async Task<PagedResponse<object>> GetSubjectsAsync(ListQueryParameters query)
+    public async Task<ServicePagedResult<object>> GetSubjectsAsync(ServiceListQueryParameters query)
     {
-        var queryable = await _subjectRepository.GetQueryableAsync();
-
-        // Search
-        if (!string.IsNullOrWhiteSpace(query.Search))
-        {
-            var search = query.Search.ToLower();
-            queryable = queryable.Where(s =>
-                s.SubjectCode.ToLower().Contains(search) ||
-                s.SubjectName.ToLower().Contains(search));
-        }
-
-        // Expand
-        var expandList = (query.Expand ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
-                         .Select(e => e.Trim().ToLower()).ToList();
-        bool expandCourses = expandList.Contains("courses");
-
-        if (expandCourses)
-        {
-            queryable = queryable
-                .Include(s => s.Courses)
-                .ThenInclude(c => c.Semester);
-        }
-
-        // Sort
-        if (!string.IsNullOrWhiteSpace(query.Sort))
-            queryable = ApplySorting(queryable, query.Sort);
-
-        var totalItems = await queryable.CountAsync();
-
-        var items = await queryable
-            .Skip((query.Page - 1) * query.Size)
-            .Take(query.Size)
-            .ToListAsync();
-
-        var responses = items.Select(s => MapToSubjectResponse(s, expandCourses)).ToList();
-
-        var pagination = new PaginationMetadata
-        {
-            Page = query.Page,
-            PageSize = query.Size,
-            TotalItems = totalItems,
-            TotalPages = (int)Math.Ceiling((double)totalItems / query.Size)
-        };
-
-        if (!string.IsNullOrWhiteSpace(query.Fields))
-        {
-            var selected = responses.Select(r => FieldSelector.SelectFields(r, query.Fields)).ToList();
-            return PagedResponse<object>.SuccessResponse((object)selected, pagination);
-        }
-
-        return PagedResponse<object>.SuccessResponse((object)responses, pagination);
-    }
-
-    public async Task<ApiResponse<SubjectResponse>> GetSubjectByIdAsync(int id)
-    {
-        var subject = await _subjectRepository.GetByIdAsync(id);
-        if (subject == null)
-            return ApiResponse<SubjectResponse>.ErrorResponse($"Subject with ID {id} not found.");
-
-        return ApiResponse<SubjectResponse>.SuccessResponse(MapToSubjectResponse(subject, true));
-    }
-
-    public async Task<ApiResponse<SubjectResponse>> CreateSubjectAsync(CreateSubjectRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.SubjectCode))
-            return ApiResponse<SubjectResponse>.ErrorResponse("SubjectCode is required.");
-
-        if (string.IsNullOrWhiteSpace(request.SubjectName))
-            return ApiResponse<SubjectResponse>.ErrorResponse("SubjectName is required.");
-
-        if (request.Credit <= 0)
-            return ApiResponse<SubjectResponse>.ErrorResponse("Credit must be greater than 0.");
-
-        var existing = await _subjectRepository.GetByCodeAsync(request.SubjectCode);
-        if (existing != null)
-            return ApiResponse<SubjectResponse>.ErrorResponse($"SubjectCode '{request.SubjectCode}' already exists.");
-
-        var subject = new Subject
-        {
-            SubjectCode = request.SubjectCode,
-            SubjectName = request.SubjectName,
-            Credit = request.Credit
-        };
-
-        await _subjectRepository.AddAsync(subject);
-        await _subjectRepository.SaveChangesAsync();
-
-        var created = await _subjectRepository.GetByIdAsync(subject.SubjectId);
-        return ApiResponse<SubjectResponse>.SuccessResponse(
-            MapToSubjectResponse(created!, true), "Subject created successfully.");
-    }
-
-    public async Task<ApiResponse<SubjectResponse>> UpdateSubjectAsync(int id, UpdateSubjectRequest request)
-    {
-        var subject = await _subjectRepository.GetByIdAsync(id);
-        if (subject == null)
-            return ApiResponse<SubjectResponse>.ErrorResponse($"Subject with ID {id} not found.");
-
-        if (string.IsNullOrWhiteSpace(request.SubjectCode))
-            return ApiResponse<SubjectResponse>.ErrorResponse("SubjectCode is required.");
-
-        if (string.IsNullOrWhiteSpace(request.SubjectName))
-            return ApiResponse<SubjectResponse>.ErrorResponse("SubjectName is required.");
-
-        if (request.Credit <= 0)
-            return ApiResponse<SubjectResponse>.ErrorResponse("Credit must be greater than 0.");
-
-        var existingCode = await _subjectRepository.GetByCodeAsync(request.SubjectCode);
-        if (existingCode != null && existingCode.SubjectId != id)
-            return ApiResponse<SubjectResponse>.ErrorResponse($"SubjectCode '{request.SubjectCode}' is already used by another subject.");
-
-        subject.SubjectCode = request.SubjectCode;
-        subject.SubjectName = request.SubjectName;
-        subject.Credit = request.Credit;
-
-        _subjectRepository.Update(subject);
-        await _subjectRepository.SaveChangesAsync();
-
-        var updated = await _subjectRepository.GetByIdAsync(id);
-        return ApiResponse<SubjectResponse>.SuccessResponse(
-            MapToSubjectResponse(updated!, true), "Subject updated successfully.");
-    }
-
-    public async Task<ApiResponse<bool>> DeleteSubjectAsync(int id)
-    {
-        var subject = await _subjectRepository.GetByIdAsync(id);
-        if (subject == null)
-            return ApiResponse<bool>.ErrorResponse($"Subject with ID {id} not found.");
-
         try
         {
-            _subjectRepository.Delete(subject);
-            await _subjectRepository.SaveChangesAsync();
-            return ApiResponse<bool>.SuccessResponse(true, "Subject deleted successfully.");
+            var queryable = await _subjectRepository.GetQueryableAsync();
+
+            // Search
+            if (!string.IsNullOrWhiteSpace(query.Search))
+            {
+                var search = query.Search.ToLower();
+                queryable = queryable.Where(s =>
+                    s.SubjectCode.ToLower().Contains(search) ||
+                    s.SubjectName.ToLower().Contains(search));
+            }
+
+            // Expand
+            var expandList = (query.Expand ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
+                             .Select(e => e.Trim().ToLower()).ToList();
+            bool expandCourses = expandList.Contains("courses");
+
+            if (expandCourses)
+            {
+                queryable = queryable
+                    .Include(s => s.Courses)
+                    .ThenInclude(c => c.Semester);
+            }
+
+            // Sort
+            if (!string.IsNullOrWhiteSpace(query.Sort))
+                queryable = ApplySorting(queryable, query.Sort);
+
+            var totalItems = await queryable.CountAsync();
+
+            var items = await queryable
+                .Skip((query.Page - 1) * query.Size)
+                .Take(query.Size)
+                .ToListAsync();
+
+            var businessModels = items
+                .Select(s => MapEntityToBusiness(s, includeCourses: expandCourses))
+                .ToList();
+
+            var pagination = new ServicePaginationMetadata
+            {
+                Page       = query.Page,
+                PageSize   = query.Size,
+                TotalItems = totalItems,
+                TotalPages = (int)Math.Ceiling((double)totalItems / query.Size)
+            };
+
+            if (!string.IsNullOrWhiteSpace(query.Fields))
+            {
+                var selected = businessModels.Select(r => FieldSelector.SelectFields(r, query.Fields)).ToList();
+                return ServicePagedResult<object>.Ok((object)selected, pagination);
+            }
+
+            return ServicePagedResult<object>.Ok((object)businessModels, pagination);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            return ApiResponse<bool>.ErrorResponse(
-                "Cannot delete subject because it has associated courses.");
+            return ServicePagedResult<object>.ServerError("An unexpected error occurred.", ex.Message);
         }
     }
 
-    // ---- Mapping ----
-
-    private static SubjectResponse MapToSubjectResponse(Subject s, bool includeCourses)
+    public async Task<ServiceResult<SubjectBusinessModel>> GetSubjectByIdAsync(int id)
     {
-        return new SubjectResponse
+        try
         {
-            SubjectId = s.SubjectId,
+            var subject = await _subjectRepository.GetByIdAsync(id);
+            if (subject == null)
+                return ServiceResult<SubjectBusinessModel>.NotFound($"Subject with ID {id} not found.");
+
+            return ServiceResult<SubjectBusinessModel>.Ok(MapEntityToBusiness(subject, includeCourses: true));
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult<SubjectBusinessModel>.ServerError("An unexpected error occurred.", ex.Message);
+        }
+    }
+
+    public async Task<ServiceResult<SubjectBusinessModel>> CreateSubjectAsync(SubjectCreateBusinessModel model)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(model.SubjectCode))
+                return ServiceResult<SubjectBusinessModel>.BadRequest("SubjectCode is required.");
+
+            if (string.IsNullOrWhiteSpace(model.SubjectName))
+                return ServiceResult<SubjectBusinessModel>.BadRequest("SubjectName is required.");
+
+            if (model.Credit <= 0)
+                return ServiceResult<SubjectBusinessModel>.BadRequest("Credit must be greater than 0.");
+
+            var existing = await _subjectRepository.GetByCodeAsync(model.SubjectCode);
+            if (existing != null)
+                return ServiceResult<SubjectBusinessModel>.BadRequest($"SubjectCode '{model.SubjectCode}' already exists.");
+
+            var subject = new Subject
+            {
+                SubjectCode = model.SubjectCode,
+                SubjectName = model.SubjectName,
+                Credit      = model.Credit
+            };
+
+            await _subjectRepository.AddAsync(subject);
+            await _subjectRepository.SaveChangesAsync();
+
+            var created = await _subjectRepository.GetByIdAsync(subject.SubjectId);
+            return ServiceResult<SubjectBusinessModel>.Created(
+                MapEntityToBusiness(created!, includeCourses: true), "Subject created successfully.");
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult<SubjectBusinessModel>.ServerError("An unexpected error occurred.", ex.Message);
+        }
+    }
+
+    public async Task<ServiceResult<SubjectBusinessModel>> UpdateSubjectAsync(int id, SubjectUpdateBusinessModel model)
+    {
+        try
+        {
+            var subject = await _subjectRepository.GetByIdAsync(id);
+            if (subject == null)
+                return ServiceResult<SubjectBusinessModel>.NotFound($"Subject with ID {id} not found.");
+
+            if (string.IsNullOrWhiteSpace(model.SubjectCode))
+                return ServiceResult<SubjectBusinessModel>.BadRequest("SubjectCode is required.");
+
+            if (string.IsNullOrWhiteSpace(model.SubjectName))
+                return ServiceResult<SubjectBusinessModel>.BadRequest("SubjectName is required.");
+
+            if (model.Credit <= 0)
+                return ServiceResult<SubjectBusinessModel>.BadRequest("Credit must be greater than 0.");
+
+            var existingCode = await _subjectRepository.GetByCodeAsync(model.SubjectCode);
+            if (existingCode != null && existingCode.SubjectId != id)
+                return ServiceResult<SubjectBusinessModel>.BadRequest(
+                    $"SubjectCode '{model.SubjectCode}' is already used by another subject.");
+
+            subject.SubjectCode = model.SubjectCode;
+            subject.SubjectName = model.SubjectName;
+            subject.Credit      = model.Credit;
+
+            _subjectRepository.Update(subject);
+            await _subjectRepository.SaveChangesAsync();
+
+            var updated = await _subjectRepository.GetByIdAsync(id);
+            return ServiceResult<SubjectBusinessModel>.Ok(
+                MapEntityToBusiness(updated!, includeCourses: true), "Subject updated successfully.");
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult<SubjectBusinessModel>.ServerError("An unexpected error occurred.", ex.Message);
+        }
+    }
+
+    public async Task<ServiceResult<bool>> DeleteSubjectAsync(int id)
+    {
+        try
+        {
+            var subject = await _subjectRepository.GetByIdAsync(id);
+            if (subject == null)
+                return ServiceResult<bool>.NotFound($"Subject with ID {id} not found.");
+
+            _subjectRepository.Delete(subject);
+            await _subjectRepository.SaveChangesAsync();
+            return ServiceResult<bool>.Ok(true, "Subject deleted successfully.");
+        }
+        catch (Exception ex) when (ex.InnerException?.Message.Contains("REFERENCE") == true
+                                || ex.Message.Contains("DELETE"))
+        {
+            return ServiceResult<bool>.BadRequest("Cannot delete subject because it has associated courses.");
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult<bool>.ServerError("An unexpected error occurred.", ex.Message);
+        }
+    }
+
+    // ---- Mapping: Entity → BusinessModel ----
+
+    private static SubjectBusinessModel MapEntityToBusiness(Subject s, bool includeCourses = false)
+    {
+        return new SubjectBusinessModel
+        {
+            SubjectId   = s.SubjectId,
             SubjectCode = s.SubjectCode,
             SubjectName = s.SubjectName,
-            Credit = s.Credit,
-            Courses = includeCourses
-                ? s.Courses.Select(c => new CourseSummaryResponse
+            Credit      = s.Credit,
+            CourseCount = s.Courses?.Count ?? 0,
+            Courses     = includeCourses
+                ? s.Courses?.Select(c => new CourseBusinessModel
                 {
-                    CourseId = c.CourseId,
-                    CourseName = c.CourseName,
-                    SemesterId = c.SemesterId,
-                    SubjectId = c.SubjectId,
-                    Semester = c.Semester != null ? new SemesterSummaryResponse
-                    {
-                        SemesterId = c.Semester.SemesterId,
-                        SemesterName = c.Semester.SemesterName,
-                        StartDate = c.Semester.StartDate,
-                        EndDate = c.Semester.EndDate
-                    } : null,
-                    Subject = null
+                    CourseId     = c.CourseId,
+                    CourseName   = c.CourseName ?? string.Empty,
+                    SemesterId   = c.SemesterId,
+                    SubjectId    = c.SubjectId,
+                    SemesterName = c.Semester?.SemesterName ?? string.Empty,
+                    DisplayName  = $"{s.SubjectCode} - {c.CourseName}"
                 }).ToList()
                 : null
         };
     }
+
+    // ---- Sorting ----
 
     private static IQueryable<Subject> ApplySorting(IQueryable<Subject> queryable, string sort)
     {
@@ -199,9 +230,9 @@ public class SubjectService : ISubjectService
 
         foreach (var part in parts)
         {
-            var trimmed = part.Trim();
+            var trimmed    = part.Trim();
             var descending = trimmed.StartsWith("-");
-            var field = trimmed.TrimStart('-').ToLower();
+            var field      = trimmed.TrimStart('-').ToLower();
 
             IOrderedQueryable<Subject> next = (ordered == null)
                 ? field switch

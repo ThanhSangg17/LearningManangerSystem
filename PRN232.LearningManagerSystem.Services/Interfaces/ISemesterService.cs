@@ -1,14 +1,13 @@
+using PRN232.LearningManagerSystem.Services.Models.BusinessModels;
 using PRN232.LearningManagerSystem.Services.Models.Common;
-using PRN232.LearningManagerSystem.Services.Models.Requests;
-using PRN232.LearningManagerSystem.Services.Models.Responses;
 
 namespace PRN232.LearningManagerSystem.Services.Interfaces;
 
 public interface ISemesterService
 {
-    Task<PagedResponse<object>> GetSemestersAsync(ListQueryParameters query);
-    Task<ApiResponse<SemesterResponse>> GetSemesterByIdAsync(int id);
-    Task<ApiResponse<SemesterResponse>> CreateSemesterAsync(CreateSemesterRequest request);
-    Task<ApiResponse<SemesterResponse>> UpdateSemesterAsync(int id, UpdateSemesterRequest request);
-    Task<ApiResponse<bool>> DeleteSemesterAsync(int id);
+    Task<ServicePagedResult<object>> GetSemestersAsync(ServiceListQueryParameters query);
+    Task<ServiceResult<SemesterBusinessModel>> GetSemesterByIdAsync(int id);
+    Task<ServiceResult<SemesterBusinessModel>> CreateSemesterAsync(SemesterCreateBusinessModel model);
+    Task<ServiceResult<SemesterBusinessModel>> UpdateSemesterAsync(int id, SemesterUpdateBusinessModel model);
+    Task<ServiceResult<bool>> DeleteSemesterAsync(int id);
 }

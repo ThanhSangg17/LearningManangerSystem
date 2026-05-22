@@ -1,14 +1,16 @@
 using Microsoft.AspNetCore.Mvc;
+using PRN232.LearningManagerSystem.API.Models.Common;
+using PRN232.LearningManagerSystem.API.Models.Requests;
+using PRN232.LearningManagerSystem.API.Models.Responses;
 using PRN232.LearningManagerSystem.Services.Interfaces;
+using PRN232.LearningManagerSystem.Services.Models.BusinessModels;
 using PRN232.LearningManagerSystem.Services.Models.Common;
-using PRN232.LearningManagerSystem.Services.Models.Requests;
-using PRN232.LearningManagerSystem.Services.Models.Responses;
+using System.Linq;
 
 namespace PRN232.LearningManagerSystem.API.Controllers;
 
-[ApiController]
 [Route("api/students")]
-public class StudentsController : ControllerBase
+public class StudentsController : BaseApiController
 {
     private readonly IStudentService _studentService;
 
@@ -21,36 +23,65 @@ public class StudentsController : ControllerBase
     [HttpGet]
     [ProducesResponseType(typeof(PagedResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(PagedResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(PagedResponse<object>), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetStudents([FromQuery] ListQueryParameters query)
     {
-        var result = await _studentService.GetStudentsAsync(query);
-        if (!result.Success)
-            return BadRequest(result);
-        return Ok(result);
+        var serviceQuery = new ServiceListQueryParameters
+        {
+            Search = query.Search,
+            Sort   = query.Sort,
+            Page   = query.Page,
+            Size   = query.Size,
+            Fields = query.Fields,
+            Expand = query.Expand
+        };
+
+        var result = await _studentService.GetStudentsAsync(serviceQuery);
+        return ToPagedActionResult(result);
     }
 
     /// <summary>Get a student by ID.</summary>
     [HttpGet("{id}")]
     [ProducesResponseType(typeof(ApiResponse<StudentResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetStudentById(int id)
     {
         var result = await _studentService.GetStudentByIdAsync(id);
-        if (!result.Success)
-            return NotFound(result);
-        return Ok(result);
+        return ToActionResult(result, MapStudentBusinessToResponse);
     }
 
     /// <summary>Create a new student.</summary>
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponse<StudentResponse>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> CreateStudent([FromBody] CreateStudentRequest request)
     {
-        var result = await _studentService.CreateStudentAsync(request);
+        // Map RequestModel → Business Input Model
+        var businessInput = new StudentCreateBusinessModel
+        {
+            FullName    = request.FullName,
+            Email       = request.Email,
+            DateOfBirth = request.DateOfBirth
+        };
+
+        var result = await _studentService.CreateStudentAsync(businessInput);
+
         if (!result.Success)
-            return BadRequest(result);
-        return CreatedAtAction(nameof(GetStudentById), new { id = result.Data!.StudentId }, result);
+            return ToActionResult(result, MapStudentBusinessToResponse);
+
+        var response = MapStudentBusinessToResponse(result.Data!);
+
+        var apiResponse = new ApiResponse<StudentResponse>
+        {
+            Success = true,
+            Message = result.Message,
+            Data    = response,
+            Errors  = null
+        };
+
+        return CreatedAtAction(nameof(GetStudentById), new { id = response.StudentId }, apiResponse);
     }
 
     /// <summary>Update an existing student.</summary>
@@ -58,14 +89,18 @@ public class StudentsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<StudentResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> UpdateStudent(int id, [FromBody] UpdateStudentRequest request)
     {
-        var result = await _studentService.UpdateStudentAsync(id, request);
-        if (!result.Success && result.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
-            return NotFound(result);
-        if (!result.Success)
-            return BadRequest(result);
-        return Ok(result);
+        var businessInput = new StudentUpdateBusinessModel
+        {
+            FullName    = request.FullName,
+            Email       = request.Email,
+            DateOfBirth = request.DateOfBirth
+        };
+
+        var result = await _studentService.UpdateStudentAsync(id, businessInput);
+        return ToActionResult(result, MapStudentBusinessToResponse);
     }
 
     /// <summary>Delete a student by ID.</summary>
@@ -73,13 +108,33 @@ public class StudentsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> DeleteStudent(int id)
     {
         var result = await _studentService.DeleteStudentAsync(id);
-        if (!result.Success && result.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
-            return NotFound(result);
-        if (!result.Success)
-            return BadRequest(result);
-        return Ok(result);
+        return ToActionResult(result);
+    }
+
+    // ---- Mapping: BusinessModel → ResponseModel ----
+
+    private static StudentResponse MapStudentBusinessToResponse(StudentBusinessModel model)
+    {
+        return new StudentResponse
+        {
+            StudentId       = model.StudentId,
+            FullName        = model.FullName,
+            Email           = model.Email,
+            DateOfBirth     = model.DateOfBirth,
+            Age             = model.Age,
+            EnrollmentCount = model.EnrollmentCount,
+            Enrollments = model.Enrollments?.Select(e => new EnrollmentSummaryResponse
+            {
+                EnrollmentId = e.EnrollmentId,
+                StudentId    = e.StudentId,
+                CourseId     = e.CourseId,
+                EnrollDate   = e.EnrollDate,
+                Status       = e.Status
+            }).ToList()
+        };
     }
 }

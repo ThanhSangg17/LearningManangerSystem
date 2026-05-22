@@ -1,14 +1,13 @@
+using PRN232.LearningManagerSystem.Services.Models.BusinessModels;
 using PRN232.LearningManagerSystem.Services.Models.Common;
-using PRN232.LearningManagerSystem.Services.Models.Requests;
-using PRN232.LearningManagerSystem.Services.Models.Responses;
 
 namespace PRN232.LearningManagerSystem.Services.Interfaces;
 
 public interface IEnrollmentService
 {
-    Task<PagedResponse<object>> GetEnrollmentsAsync(ListQueryParameters query);
-    Task<ApiResponse<EnrollmentResponse>> GetEnrollmentByIdAsync(int id);
-    Task<ApiResponse<EnrollmentResponse>> CreateEnrollmentAsync(CreateEnrollmentRequest request);
-    Task<ApiResponse<EnrollmentResponse>> UpdateEnrollmentAsync(int id, UpdateEnrollmentRequest request);
-    Task<ApiResponse<bool>> DeleteEnrollmentAsync(int id);
+    Task<ServicePagedResult<object>> GetEnrollmentsAsync(ServiceListQueryParameters query);
+    Task<ServiceResult<EnrollmentBusinessModel>> GetEnrollmentByIdAsync(int id);
+    Task<ServiceResult<EnrollmentBusinessModel>> CreateEnrollmentAsync(EnrollmentCreateBusinessModel model);
+    Task<ServiceResult<EnrollmentBusinessModel>> UpdateEnrollmentAsync(int id, EnrollmentUpdateBusinessModel model);
+    Task<ServiceResult<bool>> DeleteEnrollmentAsync(int id);
 }
