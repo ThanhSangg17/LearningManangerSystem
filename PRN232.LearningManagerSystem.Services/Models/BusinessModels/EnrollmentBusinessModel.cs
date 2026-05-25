@@ -18,6 +18,8 @@ public class EnrollmentBusinessModel
     public string SubjectCode { get; set; } = string.Empty;
     public string SemesterName { get; set; } = string.Empty;
 
+    public StudentBusinessModel? Student { get; set; }
+
     // Computed field (Business Logic)
 
     /// <summary>True when Status equals "Active" (case-insensitive).</summary>

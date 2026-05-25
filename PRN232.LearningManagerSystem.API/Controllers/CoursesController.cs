@@ -12,10 +12,12 @@ namespace PRN232.LearningManagerSystem.API.Controllers;
 public class CoursesController : BaseApiController
 {
     private readonly ICourseService _courseService;
+    private readonly IEnrollmentService _enrollmentService;
 
-    public CoursesController(ICourseService courseService)
+    public CoursesController(ICourseService courseService, IEnrollmentService enrollmentService)
     {
         _courseService = courseService;
+        _enrollmentService = enrollmentService;
     }
 
     /// <summary>Get paginated list of courses with optional search, sort, paging, field selection, and expansion.</summary>
@@ -49,6 +51,18 @@ public class CoursesController : BaseApiController
     {
         var result = await _courseService.GetCourseByIdAsync(id);
         return ToActionResult(result, MapCourseBusinessToResponse);
+    }
+
+    /// <summary>Get list of enrollments belonging to the course.</summary>
+    [HttpGet("{id}/enrollments")]
+    [ProducesResponseType(typeof(ApiResponse<List<EnrollmentResponse>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetEnrollmentsByCourseId(int id, [FromQuery] string? expand)
+    {
+        var result = await _enrollmentService.GetEnrollmentsByCourseIdAsync(id, expand);
+        return ToActionResult(result, enrollments => enrollments.Select(MapEnrollmentBusinessToResponse).ToList());
     }
 
     /// <summary>Create a new course.</summary>
@@ -152,6 +166,48 @@ public class CoursesController : BaseApiController
                 EnrollDate   = e.EnrollDate,
                 Status       = e.Status
             }).ToList()
+        };
+    }
+
+    private static EnrollmentResponse MapEnrollmentBusinessToResponse(EnrollmentBusinessModel model)
+    {
+        return new EnrollmentResponse
+        {
+            EnrollmentId = model.EnrollmentId,
+            StudentId    = model.StudentId,
+            CourseId     = model.CourseId,
+            EnrollDate   = model.EnrollDate,
+            Status       = model.Status,
+            Student = model.Student != null
+                ? new StudentSummaryResponse
+                {
+                    StudentId = model.Student.StudentId,
+                    FullName  = model.Student.FullName,
+                    Email     = model.Student.Email
+                }
+                : (!string.IsNullOrEmpty(model.StudentName)
+                    ? new StudentSummaryResponse
+                    {
+                        StudentId = model.StudentId,
+                        FullName  = model.StudentName,
+                        Email     = model.StudentEmail
+                    }
+                    : null),
+            Course = !string.IsNullOrEmpty(model.CourseName)
+                ? new CourseSummaryResponse
+                {
+                    CourseId   = model.CourseId,
+                    CourseName = model.CourseName,
+                    SemesterId = 0,
+                    SubjectId  = 0,
+                    Semester   = !string.IsNullOrEmpty(model.SemesterName)
+                        ? new SemesterSummaryResponse { SemesterName = model.SemesterName }
+                        : null,
+                    Subject = !string.IsNullOrEmpty(model.SubjectCode)
+                        ? new SubjectSummaryResponse { SubjectCode = model.SubjectCode }
+                        : null
+                }
+                : null
         };
     }
 }

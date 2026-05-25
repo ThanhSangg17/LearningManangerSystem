@@ -29,6 +29,35 @@ public class EnrollmentService : IEnrollmentService
         _courseRepository     = courseRepository;
     }
 
+    public async Task<ServiceResult<List<EnrollmentBusinessModel>>> GetEnrollmentsByCourseIdAsync(int courseId, string? expand)
+    {
+        try
+        {
+            if (courseId <= 0)
+                return ServiceResult<List<EnrollmentBusinessModel>>.BadRequest("Invalid course ID.");
+
+            if (!await _courseRepository.ExistsAsync(courseId))
+                return ServiceResult<List<EnrollmentBusinessModel>>.NotFound($"Course with ID {courseId} not found.");
+
+            var expandList = (expand ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
+                             .Select(e => e.Trim().ToLower()).ToList();
+
+            bool expandStudent = expandList.Contains("student");
+
+            var enrollments = await _enrollmentRepository.GetByCourseIdAsync(courseId, expandStudent);
+
+            var businessModels = enrollments
+                .Select(e => MapEntityToBusiness(e, includeStudent: expandStudent, includeCourse: false))
+                .ToList();
+
+            return ServiceResult<List<EnrollmentBusinessModel>>.Ok(businessModels, "Enrollments retrieved successfully.");
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult<List<EnrollmentBusinessModel>>.ServerError("An unexpected error occurred.", ex.Message);
+        }
+    }
+
     public async Task<ServicePagedResult<object>> GetEnrollmentsAsync(ServiceListQueryParameters query)
     {
         try
@@ -239,7 +268,16 @@ public class EnrollmentService : IEnrollmentService
             StudentEmail = includeStudent ? e.Student?.Email       ?? string.Empty : string.Empty,
             CourseName   = includeCourse  ? e.Course?.CourseName   ?? string.Empty : string.Empty,
             SubjectCode  = includeCourse  ? e.Course?.Subject?.SubjectCode   ?? string.Empty : string.Empty,
-            SemesterName = includeCourse  ? e.Course?.Semester?.SemesterName ?? string.Empty : string.Empty
+            SemesterName = includeCourse  ? e.Course?.Semester?.SemesterName ?? string.Empty : string.Empty,
+            Student = includeStudent && e.Student != null
+                ? new StudentBusinessModel
+                  {
+                      StudentId   = e.Student.StudentId,
+                      FullName    = e.Student.FullName,
+                      Email       = e.Student.Email,
+                      DateOfBirth = e.Student.DateOfBirth
+                  }
+                : null
         };
     }
 

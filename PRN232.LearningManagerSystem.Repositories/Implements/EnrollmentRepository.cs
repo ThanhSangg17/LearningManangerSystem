@@ -14,6 +14,16 @@ public class EnrollmentRepository : IEnrollmentRepository
         _context = context;
     }
 
+    public async Task<List<Enrollment>> GetByCourseIdAsync(int courseId, bool includeStudent)
+    {
+        var query = _context.Enrollments.Where(e => e.CourseId == courseId);
+        if (includeStudent)
+        {
+            query = query.Include(e => e.Student);
+        }
+        return await query.ToListAsync();
+    }
+
     public Task<IQueryable<Enrollment>> GetQueryableAsync()
     {
         return Task.FromResult(_context.Enrollments.AsQueryable());
